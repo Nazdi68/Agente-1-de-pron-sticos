@@ -1,2 +1,1 @@
-[![Launch Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/Nazdi68/Agente-de-pronosticos/HEAD?urlpath=streamlit/run/app.py)
 # Agente de Pronósticos IA
