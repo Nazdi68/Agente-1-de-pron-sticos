@@ -8,6 +8,7 @@ from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.stattools import adfuller
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from sklearn.linear_model import LinearRegression
+from io import BytesIO
 
 def detect_trend(y, threshold=0.01):
     t = np.arange(len(y))
@@ -21,6 +22,7 @@ def detect_seasonality(y, freq=12, thresh=0.01):
 
 st.title("🧠 Agente de Pronósticos para Toma de Decisiones")
 
+# 1) Carga de datos
 st.sidebar.header("1) Carga tu serie de tiempo")
 uploaded = st.sidebar.file_uploader("", type=['csv','xlsx'])
 if uploaded:
@@ -37,6 +39,7 @@ else:
 st.subheader("Datos cargados")
 st.dataframe(df)
 
+# 2) Diagnóstico automático
 y = df['Ventas'].values
 has_trend, coef = detect_trend(y)
 has_seas, seas_std = detect_seasonality(y)
@@ -54,12 +57,14 @@ else:
     suggestion = 'HW Multiplicativo'
 st.markdown(f"✅ **Modelo sugerido:** {suggestion}")
 
+# 3) Selección de modelo
 models = [
     'Simple','Holt','HW Aditivo','HW Multiplicativo','ARIMA',
     'Regresión Lineal Simple','Regresión Lineal Múltiple'
 ]
 model_name = st.sidebar.selectbox("2) Elige un modelo", models, index=models.index(suggestion))
 
+# 4) Horizonte y pronóstico
 n = len(y)
 limits = {
     'Simple': int(n*0.25),'Holt': int(n*0.5),
@@ -70,7 +75,8 @@ hmax = limits[model_name]
 h = st.sidebar.slider("3) Meses a pronosticar", 1, hmax, min(6,hmax))
 
 if model_name == 'ARIMA':
-    order, seasonal = (1,1,1),(1,1,1,12) if has_seas else (0,0,0,0)
+    order = (1,1,1)
+    seasonal = (1,1,1,12) if has_seas else (0,0,0,0)
     mod = SARIMAX(y, order=order, seasonal_order=seasonal,
                   enforce_stationarity=False, enforce_invertibility=False)
     fit = mod.fit(disp=False)
@@ -92,7 +98,8 @@ elif model_name == 'Regresión Lineal Múltiple':
 
 else:
     params = {}
-    if model_name == 'Holt': params['trend']='add'
+    if model_name == 'Holt': 
+        params['trend']='add'
     if model_name == 'HW Aditivo':
         params.update({'seasonal':'add','seasonal_periods':12})
     if model_name == 'HW Multiplicativo':
@@ -103,6 +110,7 @@ else:
 future = [df['Fecha'].iloc[-1] + timedelta(days=30*(i+1)) for i in range(h)]
 fc = pd.DataFrame({'Fecha': future, 'Pronóstico': pred})
 
+# 5) Mostrar resultados
 st.subheader("Pronóstico")
 st.line_chart(fc.set_index('Fecha'))
 st.dataframe(fc)
@@ -113,23 +121,29 @@ if mean_diff > 0:
 else:
     st.warning("🔔 Tendencia a la baja: optimiza recursos o revisa costos.")
 
-from io import BytesIO
+# 6) Generación de Excel
 output = BytesIO()
 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
     fc.to_excel(writer, sheet_name='Pronóstico', index=False, startrow=0)
-    wb = writer.book; ws = writer.sheets['Pronóstico']
+    wb = writer.book
+    ws = writer.sheets['Pronóstico']
+
+    # Gráfico nativo de Excel
     chart = wb.add_chart({'type':'line'})
     rows = len(fc)
     chart.add_series({
         'name':'Pronóstico',
-        'categories':['Pronóstico',1,0,rows,0],
-        'values':['Pronóstico',1,1,rows,1],
+        'categories':['Pronóstico', 1, 0, rows, 0],
+        'values':['Pronóstico', 1, 1, rows, 1],
         'marker':{'type':'circle','size':4},
     })
     chart.set_title({'name':f'Pronóstico ({model_name}) a {h} meses'})
-    chart.set_x_axis({'name':'Fecha'}); chart.set_y_axis({'name':'Ventas'})
-    ws.insert_chart('D2',chart,{'x_scale':1.2,'y_scale':1.2})
-    start = rows+3
+    chart.set_x_axis({'name':'Fecha'})
+    chart.set_y_axis({'name':'Ventas'})
+    ws.insert_chart('D2', chart, {'x_scale':1.2, 'y_scale':1.2})
+
+    # Información adicional
+    start = rows + 3
     info = [
         "Informe: Agente de Pronósticos – Nazdi IA",
         f"Fecha: {pd.Timestamp.now()}",
@@ -137,11 +151,15 @@ with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         f"Horizonte: {h} meses"
     ]
     for i, line in enumerate(info):
-        ws.write(start+i, 0, line)
-    writer.save()
+        ws.write(start + i, 0, line)
+
+# Ya no es necesario writer.save()
 output.seek(0)
 
-st.download_button("⬇️ Descargar Excel completo",
-                   data=output,
-                   file_name="pronostico_agente.xlsx",
-                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+# 7) Botón de descarga
+st.download_button(
+    "⬇️ Descargar Excel completo",
+    data=output,
+    file_name="pronostico_agente.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
